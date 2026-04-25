@@ -1,65 +1,115 @@
-import Image from "next/image";
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { getCurrentUser, logoutUser } from '@/services/auth'
+import PostsPage from './posts/page' // adjust path if necessary
 
 export default function Home() {
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+
+  // Check if the user is logged in
+  useEffect(() => {
+    const checkUser = async () => {
+      const result = await getCurrentUser()
+      if (result.success) {
+        setUser(result.user)
+      }
+      setLoading(false)
+    }
+    checkUser()
+  }, [])
+
+  // Logout handler
+  const handleLogout = async () => {
+    await logoutUser()
+    setUser(null)
+  }
+
+  // While loading session
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', marginTop: '50px', color: '#fff' }}>
+        <p>Checking authentication...</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.js file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div
+      style={{
+        minHeight: '100vh',
+        backgroundImage: 'url("/programmer-bg.jpg")',
+        backgroundSize: 'cover',
+        color: '#fff',
+      }}
+    >
+      {user ? (
+        <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
+          {/* Logged-in user info + logout */}
+          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+            <h2>Welcome, {user.name}!</h2>
+            <p>Email: {user.email}</p>
+
+            <button
+              onClick={handleLogout}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#0070f3',
+                color: '#000',
+                border: 'none',
+                borderRadius: '5px',
+                cursor: 'pointer',
+              }}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
+              Logout
+            </button>
+
+            <div style={{ marginTop: '20px' }}>
+              <a
+                href="/posts"
+                style={{ color: 'yellow', textDecoration: 'underline' }}
+              >
+                View Posts
+              </a>
+            </div>
+          </div>
+
+          {/* Show Posts */}
+          <PostsPage userFromHome={user} />
+        </div>
+      ) : (
+        // User not logged in → show login/register prompt
+        <div style={{ textAlign: 'center', marginTop: '50px' }}>
+          <h2>Welcome to Hawaasummaa Social Media</h2>
+          <p>Please login or register to continue.</p>
+
+          <div style={{ marginTop: '20px' }}>
             <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              href="/login"
+              style={{
+                color: 'blue',
+                textDecoration: 'underline',
+                marginRight: '15px',
+              }}
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              Login
+            </a>
+
+            <a
+              href="/register"
+              style={{
+                color: 'green',
+                textDecoration: 'underline',
+              }}
+            >
+              Register
+            </a>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      )}
     </div>
-  );
+  )
 }
