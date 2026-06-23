@@ -1,15 +1,29 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { getCurrentUser } from '@/services/auth';
-import { createPost, getAllposts, deletepost } from '@/services/database';
+import {
+  createPost,
+  getAllposts,
+  deletepost,
+  likePost,
+  addComment
+} from '@/services/database';
+import ImageUpload from '@/component/imageUpload';
 
 export default function PostsPage() {
   const [user, setUser] = useState(null);
   const [posts, setPosts] = useState([]);
   const [content, setContent] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageId, setImageId] = useState('');
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState('');
+
+  //  comment state
+  const [commentText, setCommentText] = useState({});
+
+  const [openComment, setOpenComment] = useState(null);
 
   useEffect(() => {
     init();
@@ -19,10 +33,12 @@ export default function PostsPage() {
     setLoading(true);
     try {
       const res = await getCurrentUser();
+
       if (!res.success) {
         setError('You must be logged in.');
         return;
       }
+
       setUser(res.user);
       await fetchPosts();
     } catch {
@@ -43,7 +59,8 @@ export default function PostsPage() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!content.trim() || !user) return;
+
+    if ((!content.trim() && !imageUrl) || !user) return;
 
     setPosting(true);
     setError('');
@@ -53,11 +70,15 @@ export default function PostsPage() {
         user.id,
         user.email,
         user.name,
-        content
+        content,
+        imageUrl,
+        imageId
       );
 
       if (res.success) {
         setContent('');
+        setImageUrl('');
+        setImageId('');
         await fetchPosts();
       } else {
         setError(res.error || 'Failed to create post');
@@ -71,19 +92,71 @@ export default function PostsPage() {
 
   const handleDelete = async (post) => {
     const ownerId = post.userId || post.UserId;
-
     if (ownerId !== user.id) return;
 
     if (!window.confirm('Delete this post?')) return;
 
     try {
       const res = await deletepost(post.$id);
+
       if (res.success) {
         setPosts((prev) => prev.filter((p) => p.$id !== post.$id));
       }
     } catch {
       setError('Delete failed');
     }
+  };
+
+  const handleLike = async (post) => {
+    const res = await likePost(post.$id, user.id, user.name);
+
+    if (!res.success) {
+      console.error(res.error);
+      return;
+    }
+
+    alert(res.alreadyLiked ? 'Already liked' : 'Post liked!');
+  };
+
+  //  COMMENT HANDLER
+  const handleComment = async (postId) => {
+    const text = commentText[postId];
+
+    if (!text?.trim()) return;
+
+    const res = await addComment(
+      postId,
+      user.id,
+      user.name,
+      user.email,
+      text
+    );
+
+    if (!res.success) {
+      console.error(res.error);
+      alert(res.error || 'Comment failed');
+      return;
+    }
+
+    // clear only this post's comment
+    setCommentText((prev) => ({
+      ...prev,
+      [postId]: ''
+    }));
+
+    // refresh posts so comments appear
+    await fetchPosts();
+  };
+
+  const handleShare = async (post) => {
+    const shareUrl = `${window.location.origin}/posts/${post.$id}`;
+    await navigator.clipboard.writeText(shareUrl);
+    alert('Link copied!');
+  };
+
+  const handleImageUpload = (url, id) => {
+    setImageUrl(url);
+    setImageId(id);
   };
 
   if (loading) {
@@ -106,7 +179,7 @@ export default function PostsPage() {
     <div className="min-h-screen bg-gray-950 text-white px-4 py-8">
       <div className="max-w-2xl mx-auto">
 
-        {/* Header */}
+        {/* HEADER */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold">Posts</h1>
           <p className="text-gray-400 text-sm">
@@ -114,35 +187,21 @@ export default function PostsPage() {
           </p>
         </div>
 
-        {/* CREATE POST FORM */}
-        <form
-          onSubmit={handleCreate}
-          className="bg-gray-900 p-4 rounded-xl mb-6 shadow-lg"
-        >
+        {/* CREATE POST */}
+        <form onSubmit={handleCreate} className="bg-gray-900 p-4 rounded-xl mb-6">
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Write something..."
-            className="w-full h-24 p-3 rounded-lg bg-gray-800 text-white outline-none resize-none"
+            className="w-full h-24 p-3 rounded-lg bg-gray-800 text-white"
           />
 
-          {/* POST BUTTON */}
+          <ImageUpload userId={user.id} onUpload={handleImageUpload} />
+
           <button
             type="submit"
             disabled={posting}
-            style={{
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              padding: '10px 16px',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '600',
-              marginTop: '10px'
-            }}
-            onMouseOver={(e) => (e.target.style.backgroundColor = '#2563eb')}
-            onMouseOut={(e) => (e.target.style.backgroundColor = '#3b82f6')}
+            className="mt-3 bg-blue-500 px-4 py-2 rounded"
           >
             {posting ? 'Posting...' : 'Post'}
           </button>
@@ -163,42 +222,79 @@ export default function PostsPage() {
             posts.map((post) => {
               const ownerId = post.userId || post.UserId;
               const isOwner = ownerId === user.id;
+              const text = post.Content || post.content;
+              const name = post.UserName || post.userName;
+              const image = post.imageUrl || post.ImageUrl;
 
               return (
-                <div
-                  key={post.$id}
-                  className="bg-gray-900 p-4 rounded-xl shadow hover:shadow-lg transition"
-                >
-                  <p className="mb-2 text-lg">
-                    {post.Content || post.content}
-                  </p>
+                <div key={post.$id} className="bg-gray-900 p-4 rounded-xl">
+
+                  <p className="text-lg">{text}</p>
 
                   <div className="text-xs text-gray-400">
-                    By {post.UserName} •{' '}
-                    {new Date(post.$createdAt).toLocaleString()}
+                    By {name} • {new Date(post.$createdAt).toLocaleString()}
                   </div>
 
-                  {/* DELETE BUTTON */}
+                  {image && (
+                    <img
+                      src={image}
+                      className="mt-3 rounded-lg max-h-[300px]"
+                    />
+                  )}
+
+                  {/* ACTIONS */}
+                  <div className="flex gap-4 mt-3 text-sm">
+
+                    <button onClick={() => handleLike(post)}>
+                      👍 Like
+                    </button>
+
+                    <button onClick={() =>
+                      setOpenComment(openComment === post.$id ? null : post.$id)
+                    }>
+                      💬 Comment
+                    </button>
+
+                    <button onClick={() => handleShare(post)}>
+                      🔗 Share
+                    </button>
+
+                  </div>
+
+                  {/* COMMENT BOX */}
+                  {openComment === post.$id && (
+                    <div className="mt-3">
+                      <input
+                        value={commentText[post.$id] || ''}
+                        onChange={(e) =>
+                          setCommentText({
+                            ...commentText,
+                            [post.$id]: e.target.value
+                          })
+                        }
+                        placeholder="Write a comment..."
+                        className="w-full p-2 bg-gray-800 rounded"
+                      />
+
+                      <button
+                        onClick={() => handleComment(post.$id)}
+                        className="mt-2 bg-blue-500 px-3 py-1 rounded"
+                      >
+                        Post Comment
+                      </button>
+                    </div>
+                  )}
+
+                  {/* DELETE */}
                   {isOwner && (
                     <button
                       onClick={() => handleDelete(post)}
-                      style={{
-                        backgroundColor: '#ef4444',
-                        color: 'white',
-                        padding: '6px 12px',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        marginTop: '10px'
-                      }}
-                      onMouseOver={(e) => (e.target.style.backgroundColor = '#dc2626')}
-                      onMouseOut={(e) => (e.target.style.backgroundColor = '#ef4444')}
+                      className="mt-3 text-red-400"
                     >
                       Delete
                     </button>
                   )}
+
                 </div>
               );
             })
