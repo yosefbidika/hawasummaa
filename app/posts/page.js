@@ -6,7 +6,10 @@ import {
   getAllposts,
   deletepost,
   likePost,
-  addComment
+  addComment,
+  getLikes,
+  getComments,
+  hasLiked
 } from '@/services/database';
 import ImageUpload from '@/component/imageUpload';
 
@@ -20,10 +23,10 @@ export default function PostsPage() {
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState('');
 
-  //  comment state
+  // comment state
   const [commentText, setCommentText] = useState({});
-
   const [openComment, setOpenComment] = useState(null);
+  const [likedPosts, setLikedPosts] = useState({});
 
   useEffect(() => {
     init();
@@ -40,7 +43,7 @@ export default function PostsPage() {
       }
 
       setUser(res.user);
-      await fetchPosts();
+await fetchPosts(res.user);
     } catch {
       setError('Failed to load user.');
     } finally {
@@ -48,15 +51,42 @@ export default function PostsPage() {
     }
   };
 
-  const fetchPosts = async () => {
-    try {
-      const data = await getAllposts();
-      setPosts(Array.isArray(data) ? data : []);
-    } catch {
-      setError('Failed to load posts.');
-    }
-  };
+  const fetchPosts = async (currentUser = user) => {
+  try {
+    const data = await getAllposts();
 
+    const postsWithCounts = await Promise.all(
+      data.map(async (post) => {
+        const likes = await getLikes(post.$id);
+        const comments = await getComments(post.$id);
+        const liked = currentUser
+          ? await hasLiked(post.$id, currentUser.id)
+          : false;
+
+        return {
+          ...post,
+          likesCount: likes,
+          commentsCount: comments.length,
+          liked,
+        };
+      })
+    );
+
+    setPosts(postsWithCounts);
+
+    const likedMap = {};
+
+    postsWithCounts.forEach((post) => {
+      likedMap[post.$id] = post.liked;
+    });
+
+    setLikedPosts(likedMap);
+
+  } catch (error) {
+    console.error(error);
+    setError('Failed to load posts.');
+  }
+};
   const handleCreate = async (e) => {
     e.preventDefault();
 
@@ -115,10 +145,29 @@ export default function PostsPage() {
       return;
     }
 
-    alert(res.alreadyLiked ? 'Already liked' : 'Post liked!');
+    // Update the like count in the UI
+    setPosts((prevPosts) =>
+      prevPosts.map((p) => {
+        if (p.$id === post.$id) {
+          return {
+            ...p,
+            likesCount: res.alreadyLiked
+              ? (p.likesCount || 0) - 1
+              : (p.likesCount || 0) + 1
+          };
+        }
+        return p;
+      })
+    );
+
+    // Track if current user liked the post
+    setLikedPosts((prev) => ({
+      ...prev,
+      [post.$id]: !res.alreadyLiked
+    }));
   };
 
-  //  COMMENT HANDLER
+  // COMMENT HANDLER
   const handleComment = async (postId) => {
     const text = commentText[postId];
 
@@ -138,6 +187,19 @@ export default function PostsPage() {
       return;
     }
 
+    // Update comment count
+    setPosts((prevPosts) =>
+      prevPosts.map((p) => {
+        if (p.$id === postId) {
+          return {
+            ...p,
+            commentsCount: (p.commentsCount || 0) + 1
+          };
+        }
+        return p;
+      })
+    );
+
     // clear only this post's comment
     setCommentText((prev) => ({
       ...prev,
@@ -151,6 +213,25 @@ export default function PostsPage() {
   const handleShare = async (post) => {
     const shareUrl = `${window.location.origin}/posts/${post.$id}`;
     await navigator.clipboard.writeText(shareUrl);
+    
+    // Track share count
+    try {
+      // Update share count in UI
+      setPosts((prevPosts) =>
+        prevPosts.map((p) => {
+          if (p.$id === post.$id) {
+            return {
+              ...p,
+              sharesCount: (p.sharesCount || 0) + 1
+            };
+          }
+          return p;
+        })
+      );
+    } catch (error) {
+      console.error('Error tracking share:', error);
+    }
+    
     alert('Link copied!');
   };
 
@@ -225,6 +306,9 @@ export default function PostsPage() {
               const text = post.Content || post.content;
               const name = post.UserName || post.userName;
               const image = post.imageUrl || post.ImageUrl;
+              const likesCount = post.likesCount || 0;
+              const commentsCount = post.commentsCount || 0;
+              const sharesCount = post.sharesCount || 0;
 
               return (
                 <div key={post.$id} className="bg-gray-900 p-4 rounded-xl">
@@ -242,11 +326,21 @@ export default function PostsPage() {
                     />
                   )}
 
+                  {/* COUNTS - PUBLIC DISPLAY */}
+                  <div className="flex gap-6 mt-3 text-sm text-gray-400">
+                    <span>❤️ {likesCount}</span>
+                    <span>💬 {commentsCount}</span>
+                    <span>🔗 {sharesCount}</span>
+                  </div>
+
                   {/* ACTIONS */}
                   <div className="flex gap-4 mt-3 text-sm">
 
-                    <button onClick={() => handleLike(post)}>
-                      👍 Like
+                    <button 
+                      onClick={() => handleLike(post)}
+                      className={likedPosts[post.$id] ? 'text-blue-400' : 'text-gray-400'}
+                    >
+                      {likedPosts[post.$id] ? '❤️ Liked' : '👍 Like'}
                     </button>
 
                     <button onClick={() =>

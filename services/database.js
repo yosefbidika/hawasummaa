@@ -204,4 +204,21 @@ export async function getLikes(postId) {
     console.error(error);
     return 0;
   }
+} export async function hasLiked(postId, userId) {
+  try {
+    const response = await databases.listDocuments(
+      DATABASE_ID,
+      COLLECTIONS.LIKES,
+      [
+        Query.equal("postId", postId),
+        Query.equal("userId", userId)
+      ]
+    );
+
+    return response.documents.length > 0;
+
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
 }
